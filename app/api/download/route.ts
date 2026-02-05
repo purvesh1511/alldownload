@@ -5,9 +5,6 @@ import path from "path";
 
 export const runtime = "nodejs";
 
-/**
- * Detect platform (optional – yt-dlp works without this)
- */
 function detectPlatform(url: string) {
   if (/youtube\.com|youtu\.be/i.test(url)) return "youtube";
   if (/facebook\.com|fb\.watch/i.test(url)) return "facebook";
@@ -20,7 +17,7 @@ function detectPlatform(url: string) {
   return "unknown";
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   try {
     const { videoUrl } = await req.json();
 
@@ -30,50 +27,56 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    
-    const platform = detectPlatform(videoUrl);
+
     const timestamp = Date.now();
     const fileName = `video_${timestamp}.mp4`;
-    
+
     const publicDir = path.join(process.cwd(), "public", "downloads");
     const outputFile = path.join(publicDir, fileName);
-    
-    // Ensure /public/downloads exists
+
     if (!fs.existsSync(publicDir)) {
       fs.mkdirSync(publicDir, { recursive: true });
     }
-    
-    return new Promise((resolve) => {
-        const command = `
-          yt-dlp "${videoUrl}" \
-          -f "bv*+ba/b" \
-          --merge-output-format mp4 \
-          --no-warnings \
-          --quiet \
-          -o "${outputFile}"
-        `;
-    
-        exec(command, (err, stdout, stderr) => {
-          if (err) {
-            console.error(err, stderr);
-            return resolve(
-              NextResponse.json({ error: "Failed to download video" }, { status: 500 })
-            );
-          }
-    
-          if (!fs.existsSync(outputFile)) {
-            return resolve(
-              NextResponse.json({ error: "MP4 file not found" }, { status: 500 })
-            );
-          }
-    
-          // Return public URL dynamically
-          const downloadLink = `downloads/${fileName}`;
-          resolve(
-            NextResponse.json({ downloadLink, format: "MP4" }, { status: 200 })
+
+    return new Promise<Response>((resolve) => {
+      const command = `
+        yt-dlp "${videoUrl}" \
+        -f "bv*+ba/b" \
+        --merge-output-format mp4 \
+        --no-warnings \
+        --quiet \
+        -o "${outputFile}"
+      `;
+
+      exec(command, (err) => {
+        if (err) {
+          console.error(err);
+          return resolve(
+            NextResponse.json(
+              { error: "Failed to download video" },
+              { status: 500 }
+            )
           );
-        });
+        }
+
+        if (!fs.existsSync(outputFile)) {
+          return resolve(
+            NextResponse.json(
+              { error: "MP4 file not found" },
+              { status: 500 }
+            )
+          );
+        }
+
+        const downloadLink = `/downloads/${fileName}`;
+        resolve(
+          NextResponse.json(
+            { downloadLink, format: "MP4" },
+            { status: 200 }
+          )
+        );
       });
+    });
   } catch (error) {
     console.error("API error:", error);
     return NextResponse.json(
